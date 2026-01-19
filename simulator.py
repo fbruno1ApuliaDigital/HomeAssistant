@@ -7,7 +7,7 @@ import random
 MQTT_BROKER = "192.168.1.35" 
 MQTT_TOPIC = "caldaia/dati"
 # Inserisci qui le credenziali che hai configurato in Home Assistant
-MQTT_USER = "Gruppo4" 
+MQTT_USER = "gruppo4" 
 MQTT_PASSWORD = "techloop26"
 
 client = mqtt.Client()
