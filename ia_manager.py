@@ -79,3 +79,4 @@ try:
     client.loop_forever()
 except Exception as e:
     print(f"Errore di connessione: {e}")
+    
