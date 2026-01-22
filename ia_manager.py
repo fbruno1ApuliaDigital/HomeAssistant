@@ -15,12 +15,13 @@ MQTT_PASSWORD = "techloop26"
 def interroga_ollama(messaggio_caldaia):
     url = "http://localhost:11434/api/generate"
     
-    # Prompt molto più autoritario per evitare chiacchiere
+    # Prompt basato su esempi (Few-Shot). È il modo più efficace per istruire Llama3.
     prompt = (
-        f"Dati caldaia: {messaggio_caldaia}. "
-        "REGOLE RIGIDE: Se 'temperatura_mandata' > 65, rispondi ESCLUSIVAMENTE con il JSON: "
-        "{\"temperatura\": 55.0}. Se è <= 65, rispondi ESCLUSIVAMENTE con la parola 'OK'. "
-        "Non aggiungere spiegazioni, non scrivere altro."
+        "Sei un sistema di controllo industriale. Rispondi SEMPRE e SOLO con una parola o un JSON.\n"
+        "ESEMPIO 1: Se temperatura_mandata è 72.0, rispondi: {\"temperatura\": 55.0}\n"
+        "ESEMPIO 2: Se temperatura_mandata è 52.1, rispondi: OK\n"
+        f"Dati attuali da analizzare: {messaggio_caldaia}\n"
+        "Risposta:"
     )
     
     payload = {
@@ -28,37 +29,43 @@ def interroga_ollama(messaggio_caldaia):
         "prompt": prompt,
         "stream": False,
         "options": {
-            "temperature": 0  # Forza l'IA a essere precisa e non creativa
+            "temperature": 0,
+            "stop": ["\n", "Nota:", "Dati:", "Spiegazione:"] # Ferma l'IA se prova a spiegare
         }
     }
     
     try:
-        response = requests.post(url, json=payload, timeout=15)
-        risposta = response.json()['response'].strip()
-        return risposta
+        response = requests.post(url, json=payload, timeout=10)
+        return response.json()['response'].strip()
     except Exception as e:
-        return f"Errore connessione Ollama: {e}"
+        return f"Errore Ollama: {e}"
 
 def on_message(client, userdata, msg):
-    dati_raw = msg.payload.decode()
-    print(f"\n[DATI RICEVUTI]: {dati_raw}")
-    
-    # L'IA analizza i dati
-    risposta_ia = interroga_ollama(dati_raw)
-    
-    # Pulizia della risposta (estriamo solo il JSON se l'IA ha aggiunto testo per errore)
-    comando_pulito = None
-    if '{"temperatura":' in risposta_ia:
-        match = re.search(r'\{.*\}', risposta_ia) # Cerca il pattern JSON { }
-        if match:
-            comando_pulito = match.group(0)
+    try:
+        payload_str = msg.payload.decode()
+        dati = json.loads(payload_str)
+        temp_reale = dati.get("temperatura_mandata", 0)
+        
+        print(f"\n[DATI RICEVUTI]: Temp: {temp_reale}°C | Pressione: {dati.get('pressione_acqua')} bar")
+        
+        # Chiediamo all'IA cosa fare
+        risposta_ia = interroga_ollama(payload_str)
+        
+        # LOGICA DI CONTROLLO:
+        # Inviamo il comando solo se c'è il JSON E la temperatura supera i 65 gradi.
+        if '{"temperatura":' in risposta_ia and temp_reale > 65:
+            match = re.search(r'\{.*\}', risposta_ia)
+            if match:
+                comando_pulito = match.group(0)
+                print(f"[RAGIONAMENTO IA]: !!! EMERGENZA !!! Temperatura {temp_reale} > 65.")
+                client.publish(MQTT_TOPIC_COMANDO, comando_pulito)
+                print(f"--- COMANDO INVIATO ALLA CALDAIA: {comando_pulito} ---")
+        else:
+            # Mostra una risposta pulita nel terminale
+            print(f"[RAGIONAMENTO IA]: Stato Normale. Risposta IA: {risposta_ia}")
 
-    if comando_pulito:
-        print(f"[RAGIONAMENTO IA]: Soglia superata! Invio correzione.")
-        client.publish(MQTT_TOPIC_COMANDO, comando_pulito)
-        print(f"--- COMANDO INVIATO ALLA CALDAIA: {comando_pulito} ---")
-    else:
-        print(f"[RAGIONAMENTO IA]: {risposta_ia}")
+    except Exception as e:
+        print(f"Errore nel processare il messaggio: {e}")
 
 # Configurazione Client
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -68,7 +75,7 @@ client.on_message = on_message
 try:
     client.connect(MQTT_BROKER, 1883, 60)
     client.subscribe(MQTT_TOPIC_DATA)
-    print("IA locale ottimizzata avviata. In ascolto su MQTT...")
+    print("IA locale avviata con filtri attivi. In ascolto...")
     client.loop_forever()
 except Exception as e:
-    print(f"Errore di connessione dell'IA: {e}")
+    print(f"Errore di connessione: {e}")
