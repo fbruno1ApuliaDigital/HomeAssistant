@@ -3,13 +3,18 @@ import requests
 import json
 
 # CONFIGURAZIONE
-MQTT_BROKER = "192.168.1.35" # L'IP della tua VirtualBox
+MQTT_BROKER = "192.168.1.35"
 MQTT_TOPIC_DATA = "caldaia/dati"
 MQTT_TOPIC_COMANDO = "caldaia/set"
 
+# CREDENZIALI (Aggiunte per sbloccare l'ascolto)
+MQTT_USER = "Gruppo4" 
+MQTT_PASSWORD = "techloop26"
+
 def interroga_ollama(messaggio_caldaia):
     url = "http://localhost:11434/api/generate"
-    prompt = f"Sei un assistente tecnico. Dati caldaia: {messaggio_caldaia}. Se la temperatura è sopra 65 gradi, suggerisci di abbassarla inviando un JSON con la nuova temperatura. Rispondi solo con il JSON."
+    # Prompt ottimizzato per ricevere solo il JSON
+    prompt = f"Dati caldaia: {messaggio_caldaia}. Se temperatura_mandata > 65, rispondi SOLO con questo JSON: {{\"temperatura\": 55.0}}. Altrimenti rispondi 'OK'."
     
     payload = {
         "model": "llama3",
@@ -18,26 +23,33 @@ def interroga_ollama(messaggio_caldaia):
     }
     
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
         return response.json()['response']
     except Exception as e:
-        return f"Errore Ollama: {e}"
+        return f"Errore connessione Ollama: {e}"
 
 def on_message(client, userdata, msg):
     dati = msg.payload.decode()
-    print(f"IA analizza dati: {dati}")
+    print(f"\n[DATI RICEVUTI]: {dati}")
     
-    # L'IA analizza i dati
+    # Interroga Ollama
     risposta_ia = interroga_ollama(dati)
-    print(f"Suggerimento IA: {risposta_ia}")
+    print(f"[RAGIONAMENTO IA]: {risposta_ia}")
     
-    # Se l'IA decide di cambiare qualcosa, lo pubblica su MQTT
-    # (Logica semplificata: qui potresti estrarre i dati dal JSON di Ollama)
+    # Se l'IA suggerisce una nuova temperatura, la inviamo alla caldaia
+    if '{"temperatura":' in risposta_ia:
+        client.publish(MQTT_TOPIC_COMANDO, risposta_ia)
+        print(f"--- COMANDO INVIATO ALLA CALDAIA: {risposta_ia} ---")
 
-client = mqtt.Client()
-client.connect(MQTT_BROKER, 1883, 60)
-client.subscribe(MQTT_TOPIC_DATA)
+# Configurazione Client con versione 2 e credenziali
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
 client.on_message = on_message
 
-print("IA locale avviata e in ascolto...")
-client.loop_forever()
+try:
+    client.connect(MQTT_BROKER, 1883, 60)
+    client.subscribe(MQTT_TOPIC_DATA)
+    print("IA locale avviata e correttamente autenticata. In ascolto...")
+    client.loop_forever()
+except Exception as e:
+    print(f"Errore di connessione dell'IA: {e}")
