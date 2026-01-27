@@ -4,7 +4,7 @@ import json
 import re
 
 # CONFIGURAZIONE
-MQTT_BROKER = "192.168.1.35"
+MQTT_BROKER = "192.168.5.19"
 MQTT_TOPIC_DATA = "caldaia/dati"
 MQTT_TOPIC_COMANDO = "caldaia/set"
 
@@ -79,4 +79,3 @@ try:
     client.loop_forever()
 except Exception as e:
     print(f"Errore di connessione: {e}")
-    

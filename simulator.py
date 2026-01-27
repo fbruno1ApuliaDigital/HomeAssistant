@@ -4,7 +4,7 @@ import json
 import random
 
 # CONFIGURAZIONE
-MQTT_BROKER = "192.168.1.35" 
+MQTT_BROKER = "192.168.5.19" 
 MQTT_TOPIC_DATA = "caldaia/dati"
 MQTT_TOPIC_COMMAND = "caldaia/set"
 
